@@ -45,11 +45,25 @@ jobs:
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          # Đóng gói tham số truyền thẳng vào make
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
-          # Nạp cấu hình gốc S20 Ultra Hàn (z3q)
-          make $MAKE_ARGS kona_sec_z3q_kor_defconfig
+          # Liệt kê tất cả các file defconfig có trong mã nguồn
+          echo "=== Danh sach file defconfig tim thay ==="
+          find arch/arm64/configs/ -name "*defconfig*"
+
+          # Tự động chọn file defconfig chuẩn cho nền tảng Snapdragon 865 (Kona)
+          if [ -f "arch/arm64/configs/vendor/kona-perf_defconfig" ]; then
+              TARGET_DEFCONFIG="vendor/kona-perf_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/kona_defconfig" ]; then
+              TARGET_DEFCONFIG="vendor/kona_defconfig"
+          elif [ -f "arch/arm64/configs/kona_sec_defconfig" ]; then
+              TARGET_DEFCONFIG="kona_sec_defconfig"
+          else
+              TARGET_DEFCONFIG=$(find arch/arm64/configs/ -name "*defconfig" | head -n 1 | sed 's|arch/arm64/configs/||')
+          fi
+
+          echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
+          make $MAKE_ARGS $TARGET_DEFCONFIG
 
           # Gộp cờ Docker / Droidspaces
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
