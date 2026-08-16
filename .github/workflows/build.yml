@@ -49,7 +49,7 @@ jobs:
             rm -f toolchain/bin/as toolchain/bin/ld
           fi
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch Chuẩn
+      - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
@@ -87,7 +87,7 @@ jobs:
           sed -i '1i #pragma clang diagnostic ignored "-Wframe-address"' src/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_linux.c 2>/dev/null || true
           find src/drivers/net/wireless/broadcom/ -name "Makefile*" -type f -exec sed -i 's/-Werror\b//g' {} +
 
-          # 7. FIX STPCPY: Thêm cờ cấm Clang tự sinh hàm stpcpy vào Makefile gốc
+          # 7. FIX STPCPY
           sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
@@ -95,7 +95,6 @@ jobs:
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          # Dùng LD=ld.lld để fix lỗi tràn bộ nhớ RTIC và ABS32
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           if [ -f "arch/arm64/configs/vendor/z3q_kor_singlex_defconfig" ]; then
@@ -110,6 +109,9 @@ jobs:
 
           echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
+
+          # Tắt MODVERSIONS để fix lỗi relocation ABS32 CRC
+          sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/g' .config
 
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
