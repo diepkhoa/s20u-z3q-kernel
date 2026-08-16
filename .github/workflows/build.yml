@@ -34,7 +34,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch KernelSU-Next
+      - name: Tải mã nguồn Kernel S20 Series & Patch KernelSU-Next + Sửa DTC yylloc
         run: |
           # 1. Kéo mã nguồn kernel
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
@@ -46,21 +46,25 @@ jobs:
           rm -rf src/drivers/kernelsu
           cp -r /tmp/ksu/kernel src/drivers/kernelsu
 
-          # 4. Tự động làm sạch toàn bộ ký tự lạ / UTF-8 BOM / CRLF trong các file Kconfig
+          # 4. Tự động làm sạch toàn bộ ký tự lạ trong các file Kconfig
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
 
-          # 5. ĐẶC TRỊ: Xóa dòng check lỗi và ép cờ Manual Hook vào Kbuild
+          # 5. Patch KSU Kbuild: Bỏ qua lỗi check hook và ép cờ Manual Hook
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
           sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS' src/drivers/kernelsu/Kbuild
+
+          # 6. SỬA LỖI DTC YYLLOC: Chuyển biến yylloc thành extern
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- AS=aarch64-linux-gnu-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
-          # 1. Nạp defconfig chuẩn của Snapdragon 865 (Kona)
+          # Nạp defconfig chuẩn của Snapdragon 865 (Kona)
           if [ -f "arch/arm64/configs/vendor/kona-perf_defconfig" ]; then
               TARGET_DEFCONFIG="vendor/kona-perf_defconfig"
           elif [ -f "arch/arm64/configs/vendor/kona_defconfig" ]; then
@@ -74,7 +78,7 @@ jobs:
           echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
-          # 2. Gộp cờ Docker & KernelSU
+          # Gộp cờ Docker & KernelSU
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
@@ -85,7 +89,8 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          # Truyền đầy đủ AS và HOSTCFLAGS để fix dứt điểm lỗi '-EL' và 'yylloc'
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- AS=aarch64-linux-gnu-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           make $MAKE_ARGS -j$(nproc)
 
