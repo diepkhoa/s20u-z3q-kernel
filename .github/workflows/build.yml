@@ -49,7 +49,7 @@ jobs:
             rm -f toolchain/bin/as toolchain/bin/ld
           fi
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch Lỗi Đường Dẫn
+      - name: Tải mã nguồn Kernel S20 Series & Patch Lỗi Cú Pháp
         run: |
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
@@ -67,20 +67,20 @@ jobs:
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
           sed -i 's/mask, mark->ignored_mask/mark->mask, mark->ignored_mask/g' src/fs/notify/fdinfo.c
 
-          # 3. VÁ LỖI ĐƯỜNG DẪN TRACE & CAMERA HEADER
-          # Sửa lỗi TRACE_INCLUDE_PATH trong HID và Display PLL
+          # 3. Vá lỗi đường dẫn Trace & Camera Header
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../drivers/hid|' src/drivers/hid/hid-trace.h 2>/dev/null || true
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../techpack/display/pll|' src/techpack/display/pll/pll_trace.h 2>/dev/null || true
-          
-          # Sửa lỗi gọi thiếu đường dẫn cam_cci_dev.h trong camera
           sed -i 's|#include "cam_cci_dev.h"|#include "../cam_cci/cam_cci_dev.h"|g' src/techpack/camera/drivers/cam_sensor_module/cam_sensor_io/cam_sensor_i2c.h 2>/dev/null || true
+
+          # 4. SỬA LỖI INPUT BOOSTER: Thêm 'void' vào prototype
+          sed -i 's/int is_ib_init_succeed()/int is_ib_init_succeed(void)/g' src/drivers/input/input_booster.c 2>/dev/null || true
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon KCFLAGS=-Wno-error"
 
           if [ -f "arch/arm64/configs/vendor/z3q_kor_singlex_defconfig" ]; then
               TARGET_DEFCONFIG="vendor/z3q_kor_singlex_defconfig"
@@ -105,7 +105,8 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          # Thêm cờ KCFLAGS="-Wno-error" để bỏ qua cảnh báo định dạng
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon KCFLAGS=-Wno-error"
 
           make $MAKE_ARGS -j$(nproc)
 
