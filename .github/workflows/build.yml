@@ -24,9 +24,12 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Tải mã nguồn Kernel S20 Series (Nhánh chuẩn x1q - hỗ trợ cả S20 Ultra)
+      - name: Tải mã nguồn Kernel S20 Series kèm Submodules KernelSU
         run: |
-          git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
+          # Thêm cờ --recurse-submodules để kéo đầy đủ KernelSU
+          git clone --depth=1 --recurse-submodules https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
+          cd src
+          git submodule update --init --recursive
 
       - name: Cấu hình Defconfig & Gộp cờ Docker
         run: |
