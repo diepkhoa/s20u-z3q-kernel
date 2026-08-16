@@ -1,6 +1,7 @@
 *.o
 *.tar
 *.zip
-*.img
 Image
 out/
+src/
+toolchain/

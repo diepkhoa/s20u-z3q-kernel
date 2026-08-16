@@ -14,12 +14,21 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Cài đặt công cụ biên dịch
+      - name: Cài đặt công cụ biên dịch & đóng gói
         run: |
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
-            git curl python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
+            git curl wget unzip python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi dos2unix
+
+      - name: Tải công cụ Magiskboot chính thức
+        run: |
+          mkdir -p /tmp/tools
+          wget https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk -O /tmp/magisk.apk
+          unzip -j /tmp/magisk.apk "lib/x86_64/libmagiskboot.so" -d /tmp/tools/
+          mv /tmp/tools/libmagiskboot.so /tmp/tools/magiskboot
+          chmod +x /tmp/tools/magiskboot
+          echo "/tmp/tools" >> $GITHUB_PATH
 
       - name: Tải Toolchain Proton-Clang
         run: |
@@ -30,7 +39,7 @@ jobs:
           # 1. Kéo mã nguồn kernel
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
 
-          # 2. Kéo KernelSU-Next
+          # 2. Kéo KernelSU-Next nhánh legacy
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
 
           # 3. Copy toàn bộ thư mục kernel vào src/drivers/kernelsu
@@ -40,14 +49,14 @@ jobs:
           # 4. Tự động làm sạch toàn bộ ký tự lạ / UTF-8 BOM / CRLF trong các file Kconfig
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
 
-      - name: Cấu hình Defconfig & Gộp cờ Docker
+      - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
-          # Tự động chọn file defconfig chuẩn cho nền tảng Snapdragon 865 (Kona)
+          # 1. Nạp defconfig chuẩn của Snapdragon 865 (Kona)
           if [ -f "arch/arm64/configs/vendor/kona-perf_defconfig" ]; then
               TARGET_DEFCONFIG="vendor/kona-perf_defconfig"
           elif [ -f "arch/arm64/configs/vendor/kona_defconfig" ]; then
@@ -61,30 +70,61 @@ jobs:
           echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
-          # Gộp cờ Docker & KernelSU Manual Hooks
+          # 2. Gộp cờ Docker & KernelSU
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
+          
+          # Ép trực tiếp cờ Hooks vào .config để đảm bảo 100% không bao giờ bị thiếu
+          cat << 'KSU_EOF' >> .config
+          CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_HOOK=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KPROBES=y
+          CONFIG_HAVE_KPROBES=y
+          CONFIG_KRETPROBES=y
+          KSU_EOF
+
           make $MAKE_ARGS olddefconfig
 
       - name: Bắt đầu Biên dịch Kernel
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          export KSU_GIT_VERSION="12450"
           
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
-          # Khai báo phiên bản KSU để bỏ qua cảnh báo
-          export KSU_GIT_VERSION="12450"
-
           make $MAKE_ARGS -j$(nproc)
 
-      - name: Đóng gói thành phẩm
+      - name: Tự động tráo ruột và đóng gói file boot_docker.tar cho Odin
         run: |
           mkdir -p output
           cp src/arch/arm64/boot/Image output/Image
-          echo "Build thành công!"
+
+          # Kiểm tra nếu có file stock/boot.img thì tự động tráo ruột và đóng gói tar
+          if [ -f "stock/boot.img" ]; then
+              echo "===> Phat hien stock/boot.img, bat dau dong goi qua magiskboot..."
+              mkdir -p /tmp/repack && cd /tmp/repack
+              cp $GITHUB_WORKSPACE/stock/boot.img ./boot.img
+              
+              # 1. Rã nén boot.img gốc
+              magiskboot unpack boot.img
+              
+              # 2. Thay thế kernel cũ bằng Image mới vừa biên dịch
+              cp $GITHUB_WORKSPACE/output/Image ./kernel
+              
+              # 3. Đóng gói lại thành boot.img mới
+              magiskboot repack boot.img new-boot.img
+              mv new-boot.img boot.img
+              
+              # 4. Nén thành file .tar cho Odin
+              tar -cvf $GITHUB_WORKSPACE/output/boot_docker.tar boot.img
+              echo "===> Dong goi boot_docker.tar thanh cong!"
+          else
+              echo "===> Khong tim thay stock/boot.img, chi xuat file Image tho."
+          fi
 
       - name: Tải thành phẩm lên GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: S20Ultra-Docker-KernelSU
-          path: output/Image
+          name: S20Ultra-Odin-Flashable
+          path: output/
