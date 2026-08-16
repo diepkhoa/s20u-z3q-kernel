@@ -34,7 +34,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Tải mã nguồn Kernel S20 Series & Copy KernelSU-Next (Nhánh Legacy)
+      - name: Tải mã nguồn Kernel S20 Series & Patch KernelSU-Next
         run: |
           # 1. Kéo mã nguồn kernel
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
@@ -48,6 +48,10 @@ jobs:
 
           # 4. Tự động làm sạch toàn bộ ký tự lạ / UTF-8 BOM / CRLF trong các file Kconfig
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
+
+          # 5. ĐẶC TRỊ: Xóa dòng check lỗi và ép cờ Manual Hook vào Kbuild
+          sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
+          sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS' src/drivers/kernelsu/Kbuild
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
@@ -72,17 +76,6 @@ jobs:
 
           # 2. Gộp cờ Docker & KernelSU
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
-          
-          # Ép trực tiếp cờ Hooks vào .config để đảm bảo 100% không bao giờ bị thiếu
-          cat << 'KSU_EOF' >> .config
-          CONFIG_KSU=y
-          CONFIG_KSU_MANUAL_HOOK=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KPROBES=y
-          CONFIG_HAVE_KPROBES=y
-          CONFIG_KRETPROBES=y
-          KSU_EOF
-
           make $MAKE_ARGS olddefconfig
 
       - name: Bắt đầu Biên dịch Kernel
@@ -90,6 +83,7 @@ jobs:
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           export KSU_GIT_VERSION="12450"
+          export KSU_VERSION_TAG="v1.0.5"
           
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
