@@ -60,7 +60,6 @@ jobs:
           cp -r /tmp/ksu/include src/drivers/kernelsu/ 2>/dev/null || true
           cp -r /tmp/ksu/uapi src/drivers/kernelsu/ 2>/dev/null || true
           
-          # Đảm bảo thư mục uapi nằm đúng vị trí tìm kiếm
           if [ -d "/tmp/ksu/include/uapi" ]; then
             cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
           fi
@@ -70,12 +69,16 @@ jobs:
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
           sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include -I$(srctree)/drivers/kernelsu/uapi' src/drivers/kernelsu/Kbuild
 
-          # 3. Sửa lỗi DTC yylloc và Typo fdinfo
+          # 3. Vá lỗi strscpy_pad trong kernel_compat.h
+          find src/drivers/kernelsu/ -type f -exec sed -i 's/return strscpy_pad(dest, src, count);/strncpy(dest, src, count); return strlen(dest);/g' {} +
+          find src/drivers/kernelsu/ -type f -exec sed -i 's/\bstrscpy_pad\b/strncpy/g' {} +
+
+          # 4. Sửa lỗi DTC yylloc và Typo fdinfo
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
           sed -i 's/mask, mark->ignored_mask/mark->mask, mark->ignored_mask/g' src/fs/notify/fdinfo.c
 
-          # 4. Vá lỗi đường dẫn Trace & Camera Header & Input Booster
+          # 5. Vá lỗi đường dẫn Trace & Camera Header & Input Booster
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../drivers/hid|' src/drivers/hid/hid-trace.h 2>/dev/null || true
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../techpack/display/pll|' src/techpack/display/pll/pll_trace.h 2>/dev/null || true
           sed -i 's|#include "cam_cci_dev.h"|#include "../cam_cci/cam_cci_dev.h"|g' src/techpack/camera/drivers/cam_sensor_module/cam_sensor_io/cam_sensor_i2c.h 2>/dev/null || true
