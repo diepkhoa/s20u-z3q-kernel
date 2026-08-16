@@ -14,50 +14,61 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Cài đặt công cụ biên dịch & đóng gói
+      - name: Cài đặt công cụ biên dịch
         run: |
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
             git curl wget unzip python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu dos2unix
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu dos2unix ccache
 
-      - name: Tải công cụ Magiskboot chính thức
+      - name: Thiết lập Bộ nhớ đệm (Cache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            toolchain
+            ~/.ccache
+          key: ${{ runner.os }}-kernel-build-cache-v1
+          restore-keys: |
+            ${{ runner.os }}-kernel-build-cache-
+
+      - name: Tải công cụ Magiskboot
         run: |
-          mkdir -p /tmp/tools
-          wget https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk -O /tmp/magisk.apk
-          unzip -j /tmp/magisk.apk "lib/x86_64/libmagiskboot.so" -d /tmp/tools/
-          mv /tmp/tools/libmagiskboot.so /tmp/tools/magiskboot
-          chmod +x /tmp/tools/magiskboot
+          if [ ! -f "/tmp/tools/magiskboot" ]; then
+            mkdir -p /tmp/tools
+            wget https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk -O /tmp/magisk.apk
+            unzip -j /tmp/magisk.apk "lib/x86_64/libmagiskboot.so" -d /tmp/tools/
+            mv /tmp/tools/libmagiskboot.so /tmp/tools/magiskboot
+            chmod +x /tmp/tools/magiskboot
+          fi
           echo "/tmp/tools" >> $GITHUB_PATH
 
       - name: Tải Toolchain Proton-Clang
         run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
-          # Xóa file as/ld trùng tên để không xung đột với host compiler của Ubuntu
-          rm -f toolchain/bin/as toolchain/bin/ld
+          if [ ! -d "toolchain/bin" ]; then
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
+            rm -f toolchain/bin/as toolchain/bin/ld
+          fi
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch KernelSU-Next + Sửa DTC yylloc
+      - name: Tải mã nguồn Kernel S20 Series & Patch Lỗi Typo
         run: |
-          # 1. Kéo mã nguồn kernel
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
-
-          # 2. Kéo KernelSU-Next nhánh legacy
+          
+          # 1. Kéo và copy KernelSU
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
-
-          # 3. Copy toàn bộ thư mục kernel vào src/drivers/kernelsu
           rm -rf src/drivers/kernelsu
           cp -r /tmp/ksu/kernel src/drivers/kernelsu
 
-          # 4. Tự động làm sạch toàn bộ ký tự lạ trong các file Kconfig
+          # 2. Làm sạch Kconfig và patch KSU Hooks
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
-
-          # 5. Patch KSU Kbuild: Bỏ qua lỗi check hook và ép cờ Manual Hook
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
           sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS' src/drivers/kernelsu/Kbuild
 
-          # 6. Sửa lỗi DTC yylloc
+          # 3. Sửa lỗi DTC yylloc
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
+
+          # 4. VÁ LỖI TYPO TRONG fs/notify/fdinfo.c (Đổi mask thành mark->mask)
+          sed -i 's/mask, mark->ignored_mask/mark->mask, mark->ignored_mask/g' src/fs/notify/fdinfo.c
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
@@ -66,7 +77,6 @@ jobs:
           
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
-          # Ưu tiên tìm đúng defconfig của S20 Ultra Hàn (z3q)
           if [ -f "arch/arm64/configs/vendor/z3q_kor_singlex_defconfig" ]; then
               TARGET_DEFCONFIG="vendor/z3q_kor_singlex_defconfig"
           elif find arch/arm64/configs/ -name "*z3q*defconfig" | grep -q .; then
@@ -77,10 +87,9 @@ jobs:
               TARGET_DEFCONFIG=$(find arch/arm64/configs/ -name "*defconfig" | head -n 1 | sed 's|arch/arm64/configs/||')
           fi
 
-          echo "===> Dang nap defconfig cho S20 Ultra: $TARGET_DEFCONFIG"
+          echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
-          # Gộp cờ Docker & KernelSU
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
@@ -100,23 +109,16 @@ jobs:
           mkdir -p output
           cp src/arch/arm64/boot/Image output/Image
 
-          # Kiểm tra nếu có file stock/boot.img thì tự động tráo ruột và đóng gói tar
           if [ -f "stock/boot.img" ]; then
               echo "===> Phat hien stock/boot.img, bat dau dong goi qua magiskboot..."
               mkdir -p /tmp/repack && cd /tmp/repack
               cp $GITHUB_WORKSPACE/stock/boot.img ./boot.img
               
-              # 1. Rã nén boot.img gốc
               magiskboot unpack boot.img
-              
-              # 2. Thay thế kernel cũ bằng Image mới vừa biên dịch
               cp $GITHUB_WORKSPACE/output/Image ./kernel
-              
-              # 3. Đóng gói lại thành boot.img mới
               magiskboot repack boot.img new-boot.img
               mv new-boot.img boot.img
               
-              # 4. Nén thành file .tar cho Odin
               tar -cvf $GITHUB_WORKSPACE/output/boot_docker.tar boot.img
               echo "===> Dong goi boot_docker.tar thanh cong!"
           else
