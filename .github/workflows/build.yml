@@ -49,26 +49,31 @@ jobs:
             rm -f toolchain/bin/as toolchain/bin/ld
           fi
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch Lỗi Typo
+      - name: Tải mã nguồn Kernel S20 Series & Patch Lỗi Đường Dẫn
         run: |
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
-          # 1. Kéo và copy KernelSU
+          # 1. Kéo và patch KernelSU
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
           rm -rf src/drivers/kernelsu
           cp -r /tmp/ksu/kernel src/drivers/kernelsu
 
-          # 2. Làm sạch Kconfig và patch KSU Hooks
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
           sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS' src/drivers/kernelsu/Kbuild
 
-          # 3. Sửa lỗi DTC yylloc
+          # 2. Sửa lỗi DTC yylloc và Typo fdinfo
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
-
-          # 4. VÁ LỖI TYPO TRONG fs/notify/fdinfo.c (Đổi mask thành mark->mask)
           sed -i 's/mask, mark->ignored_mask/mark->mask, mark->ignored_mask/g' src/fs/notify/fdinfo.c
+
+          # 3. VÁ LỖI ĐƯỜNG DẪN TRACE & CAMERA HEADER
+          # Sửa lỗi TRACE_INCLUDE_PATH trong HID và Display PLL
+          sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../drivers/hid|' src/drivers/hid/hid-trace.h 2>/dev/null || true
+          sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../techpack/display/pll|' src/techpack/display/pll/pll_trace.h 2>/dev/null || true
+          
+          # Sửa lỗi gọi thiếu đường dẫn cam_cci_dev.h trong camera
+          sed -i 's|#include "cam_cci_dev.h"|#include "../cam_cci/cam_cci_dev.h"|g' src/techpack/camera/drivers/cam_sensor_module/cam_sensor_io/cam_sensor_i2c.h 2>/dev/null || true
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
