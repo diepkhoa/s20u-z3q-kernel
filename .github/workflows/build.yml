@@ -24,13 +24,13 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Tải mã nguồn Kernel & Kéo KernelSU-Next
+      - name: Tải mã nguồn Kernel & Kéo KernelSU-Next chính thức
         run: |
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           cd src
-          # Tải KernelSU-Next tương thích với SuSFS và tạo symlink vào drivers/kernelsu
-          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next-susfs/kernel/setup.sh" | bash -s next-susfs || {
-            git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git -b next-susfs KernelSU-Next
+          # Kéo KernelSU-Next từ tổ chức chính thức và tạo liên kết symlink
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next || {
+            git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b next KernelSU-Next
             ln -sf ../../KernelSU-Next/kernel drivers/kernelsu
           }
 
