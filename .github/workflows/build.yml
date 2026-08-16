@@ -30,9 +30,14 @@ jobs:
           chmod +x /tmp/tools/magiskboot
           echo "/tmp/tools" >> $GITHUB_PATH
 
-      - name: Tải Toolchain Proton-Clang
+      - name: Tải Toolchain Proton-Clang & Sửa lỗi Assembler ARM64
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
+          
+          # FIX DỨT ĐIỂM LỖI '-EL': Trỏ as và ld sang bộ ARM64
+          rm -f toolchain/bin/as toolchain/bin/ld
+          ln -sf aarch64-linux-gnu-as toolchain/bin/as
+          ln -sf aarch64-linux-gnu-ld toolchain/bin/ld
 
       - name: Tải mã nguồn Kernel S20 Series & Patch KernelSU-Next + Sửa DTC yylloc
         run: |
@@ -89,7 +94,6 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          # Truyền đầy đủ AS và HOSTCFLAGS để fix dứt điểm lỗi '-EL' và 'yylloc'
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- AS=aarch64-linux-gnu-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           make $MAKE_ARGS -j$(nproc)
