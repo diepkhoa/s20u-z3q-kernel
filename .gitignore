@@ -1,0 +1,6 @@
+*.o
+*.tar
+*.zip
+*.img
+Image
+out/

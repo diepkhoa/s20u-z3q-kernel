@@ -1,0 +1,77 @@
+name: Build S20 Ultra Docker Kernel
+
+on:
+  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên web GitHub
+  push:
+    branches:
+      - main
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Cài đặt công cụ biên dịch
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
+            git curl python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev
+
+      - name: Tải Toolchain Proton-Clang
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
+
+      - name: Tải mã nguồn Kernel Samsung SM8250 (z3q)
+        run: |
+          git clone --depth=1 https://github.com/AstroByteX/android_kernel_samsung_sm8250.git -b oneui5-qpr3 src
+
+      - name: Tích hợp KernelSU-Next (Root cấp độ nhân)
+        run: |
+          cd src
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+
+      - name: Cấu hình Defconfig & Gộp cờ Docker
+        run: |
+          cd src
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+          # Nạp cấu hình gốc S20 Ultra Hàn (z3q)
+          make kona_sec_z3q_kor_defconfig
+
+          # Gộp cờ Docker
+          scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
+          make olddefconfig
+
+      - name: Bắt đầu Biên dịch Kernel
+        run: |
+          cd src
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+          make -j$(nproc)
+
+      - name: Đóng gói thành phẩm
+        run: |
+          mkdir -p output
+          cp src/arch/arm64/boot/Image output/Image
+          cd output
+          tar -cvf kernel-docker-s20u.tar Image
+          echo "Build thành công!"
+
+      - name: Tải thành phẩm lên GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: S20Ultra-Docker-KernelSU
+          path: output/
