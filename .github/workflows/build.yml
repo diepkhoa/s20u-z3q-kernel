@@ -1,7 +1,7 @@
 name: Build S20 Ultra Docker Kernel
 
 on:
-  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên web GitHub
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -24,14 +24,9 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Tải mã nguồn Kernel Samsung SM8250 (z3q)
+      - name: Tải mã nguồn Kernel S20 Ultra (Nhánh z3q - Đã có sẵn KernelSU-Next)
         run: |
-          git clone --depth=1 https://github.com/AstroByteX/android_kernel_samsung_sm8250.git -b oneui5-qpr3 src
-
-      - name: Tích hợp KernelSU-Next (Root cấp độ nhân)
-        run: |
-          cd src
-          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b z3q src
 
       - name: Cấu hình Defconfig & Gộp cờ Docker
         run: |
@@ -46,7 +41,7 @@ jobs:
           # Nạp cấu hình gốc S20 Ultra Hàn (z3q)
           make kona_sec_z3q_kor_defconfig
 
-          # Gộp cờ Docker
+          # Gộp cờ Docker / Droidspaces
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make olddefconfig
 
@@ -66,12 +61,10 @@ jobs:
         run: |
           mkdir -p output
           cp src/arch/arm64/boot/Image output/Image
-          cd output
-          tar -cvf kernel-docker-s20u.tar Image
           echo "Build thành công!"
 
       - name: Tải thành phẩm lên GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: S20Ultra-Docker-KernelSU
-          path: output/
+          path: output/Image
