@@ -19,7 +19,7 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
             git curl wget unzip python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi dos2unix
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu dos2unix
 
       - name: Tải công cụ Magiskboot chính thức
         run: |
@@ -30,14 +30,11 @@ jobs:
           chmod +x /tmp/tools/magiskboot
           echo "/tmp/tools" >> $GITHUB_PATH
 
-      - name: Tải Toolchain Proton-Clang & Sửa lỗi Assembler ARM64
+      - name: Tải Toolchain Proton-Clang
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
-          
-          # FIX DỨT ĐIỂM LỖI '-EL': Trỏ as và ld sang bộ ARM64
+          # Xóa file as/ld trùng tên để không xung đột với host compiler của Ubuntu
           rm -f toolchain/bin/as toolchain/bin/ld
-          ln -sf aarch64-linux-gnu-as toolchain/bin/as
-          ln -sf aarch64-linux-gnu-ld toolchain/bin/ld
 
       - name: Tải mã nguồn Kernel S20 Series & Patch KernelSU-Next + Sửa DTC yylloc
         run: |
@@ -58,7 +55,7 @@ jobs:
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
           sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS' src/drivers/kernelsu/Kbuild
 
-          # 6. SỬA LỖI DTC YYLLOC: Chuyển biến yylloc thành extern
+          # 6. Sửa lỗi DTC yylloc
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
 
@@ -67,20 +64,20 @@ jobs:
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- AS=aarch64-linux-gnu-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
-          # Nạp defconfig chuẩn của Snapdragon 865 (Kona)
-          if [ -f "arch/arm64/configs/vendor/kona-perf_defconfig" ]; then
+          # Ưu tiên tìm đúng defconfig của S20 Ultra Hàn (z3q)
+          if [ -f "arch/arm64/configs/vendor/z3q_kor_singlex_defconfig" ]; then
+              TARGET_DEFCONFIG="vendor/z3q_kor_singlex_defconfig"
+          elif find arch/arm64/configs/ -name "*z3q*defconfig" | grep -q .; then
+              TARGET_DEFCONFIG=$(find arch/arm64/configs/ -name "*z3q*defconfig" | head -n 1 | sed 's|arch/arm64/configs/||')
+          elif [ -f "arch/arm64/configs/vendor/kona-perf_defconfig" ]; then
               TARGET_DEFCONFIG="vendor/kona-perf_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/kona_defconfig" ]; then
-              TARGET_DEFCONFIG="vendor/kona_defconfig"
-          elif [ -f "arch/arm64/configs/kona_sec_defconfig" ]; then
-              TARGET_DEFCONFIG="kona_sec_defconfig"
           else
               TARGET_DEFCONFIG=$(find arch/arm64/configs/ -name "*defconfig" | head -n 1 | sed 's|arch/arm64/configs/||')
           fi
 
-          echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
+          echo "===> Dang nap defconfig cho S20 Ultra: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
           # Gộp cờ Docker & KernelSU
@@ -94,7 +91,7 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- AS=aarch64-linux-gnu-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           make $MAKE_ARGS -j$(nproc)
 
