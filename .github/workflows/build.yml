@@ -49,30 +49,36 @@ jobs:
             rm -f toolchain/bin/as toolchain/bin/ld
           fi
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch Lỗi Cú Pháp
+      - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
-          # 1. Kéo và patch KernelSU
+          # 1. Kéo KernelSU-Next và copy ĐẦY ĐỦ cả kernel lẫn include/uapi
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
-          rm -rf src/drivers/kernelsu
-          cp -r /tmp/ksu/kernel src/drivers/kernelsu
+          rm -rf src/drivers/kernelsu && mkdir -p src/drivers/kernelsu
+          cp -r /tmp/ksu/kernel/* src/drivers/kernelsu/
+          cp -r /tmp/ksu/include src/drivers/kernelsu/ 2>/dev/null || true
+          cp -r /tmp/ksu/uapi src/drivers/kernelsu/ 2>/dev/null || true
+          
+          # Đảm bảo thư mục uapi nằm đúng vị trí tìm kiếm
+          if [ -d "/tmp/ksu/include/uapi" ]; then
+            cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
+          fi
 
+          # 2. Làm sạch Kconfig và patch KSU Hooks + Include Paths
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
-          sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS' src/drivers/kernelsu/Kbuild
+          sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include -I$(srctree)/drivers/kernelsu/uapi' src/drivers/kernelsu/Kbuild
 
-          # 2. Sửa lỗi DTC yylloc và Typo fdinfo
+          # 3. Sửa lỗi DTC yylloc và Typo fdinfo
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
           sed -i 's/mask, mark->ignored_mask/mark->mask, mark->ignored_mask/g' src/fs/notify/fdinfo.c
 
-          # 3. Vá lỗi đường dẫn Trace & Camera Header
+          # 4. Vá lỗi đường dẫn Trace & Camera Header & Input Booster
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../drivers/hid|' src/drivers/hid/hid-trace.h 2>/dev/null || true
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../techpack/display/pll|' src/techpack/display/pll/pll_trace.h 2>/dev/null || true
           sed -i 's|#include "cam_cci_dev.h"|#include "../cam_cci/cam_cci_dev.h"|g' src/techpack/camera/drivers/cam_sensor_module/cam_sensor_io/cam_sensor_i2c.h 2>/dev/null || true
-
-          # 4. SỬA LỖI INPUT BOOSTER: Thêm 'void' vào prototype
           sed -i 's/int is_ib_init_succeed()/int is_ib_init_succeed(void)/g' src/drivers/input/input_booster.c 2>/dev/null || true
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
@@ -105,7 +111,6 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          # Thêm cờ KCFLAGS="-Wno-error" để bỏ qua cảnh báo định dạng
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon KCFLAGS=-Wno-error"
 
           make $MAKE_ARGS -j$(nproc)
