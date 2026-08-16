@@ -49,17 +49,16 @@ jobs:
             rm -f toolchain/bin/as toolchain/bin/ld
           fi
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch Chuẩn Xác
+      - name: Tải mã nguồn Kernel S20 Series & Patch Chuẩn
         run: |
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
-          # 1. Kéo KernelSU-Next và copy ĐẦY ĐỦ
+          # 1. Kéo KernelSU-Next
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
           rm -rf src/drivers/kernelsu && mkdir -p src/drivers/kernelsu
           cp -r /tmp/ksu/kernel/* src/drivers/kernelsu/
           cp -r /tmp/ksu/include src/drivers/kernelsu/ 2>/dev/null || true
           cp -r /tmp/ksu/uapi src/drivers/kernelsu/ 2>/dev/null || true
-          
           if [ -d "/tmp/ksu/include/uapi" ]; then
             cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
           fi
@@ -84,16 +83,20 @@ jobs:
           sed -i 's|#include "cam_cci_dev.h"|#include "../cam_cci/cam_cci_dev.h"|g' src/techpack/camera/drivers/cam_sensor_module/cam_sensor_io/cam_sensor_i2c.h 2>/dev/null || true
           sed -i 's/int is_ib_init_succeed()/int is_ib_init_succeed(void)/g' src/drivers/input/input_booster.c 2>/dev/null || true
 
-          # 6. VÁ LỖI BROADCOM WI-FI: Bỏ qua cảnh báo frame-address trực tiếp trong mã nguồn
+          # 6. Sửa lỗi Broadcom Wi-Fi
           sed -i '1i #pragma clang diagnostic ignored "-Wframe-address"' src/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_linux.c 2>/dev/null || true
           find src/drivers/net/wireless/broadcom/ -name "Makefile*" -type f -exec sed -i 's/-Werror\b//g' {} +
+
+          # 7. FIX STPCPY: Thêm cờ cấm Clang tự sinh hàm stpcpy vào Makefile gốc
+          sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          # Dùng LD=ld.lld để fix lỗi tràn bộ nhớ RTIC và ABS32
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           if [ -f "arch/arm64/configs/vendor/z3q_kor_singlex_defconfig" ]; then
               TARGET_DEFCONFIG="vendor/z3q_kor_singlex_defconfig"
@@ -118,7 +121,7 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           make $MAKE_ARGS -j$(nproc)
 
