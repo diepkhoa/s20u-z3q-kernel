@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
-            git curl python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev
+            git curl python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev dos2unix
 
       - name: Tải Toolchain Proton-Clang
         run: |
@@ -26,18 +26,18 @@ jobs:
 
       - name: Tải mã nguồn Kernel S20 Series & Copy KernelSU-Next (Nhánh Legacy)
         run: |
-          # 1. Kéo mã nguồn kernel S20 Series
+          # 1. Kéo mã nguồn kernel
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
 
-          # 2. Kéo KernelSU-Next chuẩn nhánh legacy cho kernel 4.19
+          # 2. Kéo KernelSU-Next
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
 
           # 3. Copy toàn bộ thư mục kernel vào src/drivers/kernelsu
           rm -rf src/drivers/kernelsu
           cp -r /tmp/ksu/kernel src/drivers/kernelsu
 
-          # 4. Kiểm tra để đảm bảo file Kconfig tồn tại
-          ls -l src/drivers/kernelsu/Kconfig
+          # 4. Tự động làm sạch toàn bộ ký tự lạ / UTF-8 BOM / CRLF trong các file Kconfig
+          find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
 
       - name: Cấu hình Defconfig & Gộp cờ Docker
         run: |
