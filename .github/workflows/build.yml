@@ -24,19 +24,19 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Tải mã nguồn Kernel S20 Series & Copy KernelSU-Next trực tiếp
+      - name: Tải mã nguồn Kernel S20 Series & Copy KernelSU-Next (Nhánh Legacy)
         run: |
-          # 1. Kéo mã nguồn kernel
+          # 1. Kéo mã nguồn kernel S20 Series
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
 
-          # 2. Kéo KernelSU-Next về thư mục tạm
-          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b next /tmp/ksu
+          # 2. Kéo KernelSU-Next chuẩn nhánh legacy cho kernel 4.19
+          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
 
-          # 3. Xóa symlink cũ (nếu có) và copy file thực tế vào thẳng drivers/kernelsu
+          # 3. Copy toàn bộ thư mục kernel vào src/drivers/kernelsu
           rm -rf src/drivers/kernelsu
           cp -r /tmp/ksu/kernel src/drivers/kernelsu
 
-          # 4. Kiểm tra để đảm bảo file Kconfig chắc chắn tồn tại
+          # 4. Kiểm tra để đảm bảo file Kconfig tồn tại
           ls -l src/drivers/kernelsu/Kconfig
 
       - name: Cấu hình Defconfig & Gộp cờ Docker
