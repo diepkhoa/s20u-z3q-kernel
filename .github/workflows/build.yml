@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   build-kernel:
     runs-on: ubuntu-22.04
@@ -87,7 +90,7 @@ jobs:
           sed -i '1i #pragma clang diagnostic ignored "-Wframe-address"' src/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_linux.c 2>/dev/null || true
           find src/drivers/net/wireless/broadcom/ -name "Makefile*" -type f -exec sed -i 's/-Werror\b//g' {} +
 
-          # 7. FIX STPCPY
+          # 7. Fix stpcpy
           sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
 
       - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
@@ -110,7 +113,7 @@ jobs:
           echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
-          # Tắt MODVERSIONS để fix lỗi relocation ABS32 CRC
+          # Tắt MODVERSIONS
           sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/g' .config
 
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
@@ -148,8 +151,16 @@ jobs:
               echo "===> Khong tim thay stock/boot.img, chi xuat file Image tho."
           fi
 
-      - name: Tải thành phẩm lên GitHub Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Xuất bản lên GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: S20Ultra-Odin-Flashable
-          path: output/
+          tag_name: v1.0.${{ github.run_number }}
+          name: "S20 Ultra Docker Kernel v1.0.${{ github.run_number }}"
+          body: |
+            ### 🚀 Bản phát hành Kernel S20 Ultra (z3q / SM-G988N)
+            * **Tích hợp:** Docker Native & LXC / Droidspaces (cgroups, overlayfs, namespaces).
+            * **Bật sẵn:** Quyền Root KernelSU-Next & công nghệ ẩn root SuSFS.
+            * **Driver:** Hỗ trợ mạng dây USB-to-LAN (Realtek RTL8153B / ASIX).
+            * **Cách dùng:** Tải file `boot_docker.tar` nạp vào slot **AP** trong Odin.
+          files: |
+            output/*
