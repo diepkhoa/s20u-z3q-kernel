@@ -52,10 +52,10 @@ jobs:
             rm -f toolchain/bin/as toolchain/bin/ld
           fi
 
-      - name: Tải mã nguồn GỐC S20 Ultra z3q từ GoRhanHee & Patch Toàn Diện
+      - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
-          # 1. Kéo đúng nhánh z3q chuẩn của S20 Ultra từ chính tác giả GoRhanHee
-          git clone --depth=1 https://github.com/GoRhanHee/kernel_samsung_sm8250.git -b z3q src
+          # 1. Kéo nhánh x1q hợp nhất (chuẩn chung cho S20/S20+/S20U Snapdragon)
+          git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
           # 2. Kéo KernelSU-Next và copy ĐẦY ĐỦ
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
@@ -94,20 +94,16 @@ jobs:
           # 8. Fix stpcpy
           sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
 
-      - name: Cấu hình Defconfig S20 Ultra (z3q) & Gộp cờ Docker
+      - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon LDFLAGS_vmlinux=-z,notext"
 
-          # Tìm chính xác file cấu hình của z3q (S20 Ultra)
-          TARGET_DEFCONFIG=$(find arch/arm64/configs/ -type f | grep -i "z3q" | head -n 1 | sed 's|arch/arm64/configs/||')
-          if [ -z "$TARGET_DEFCONFIG" ]; then
-              TARGET_DEFCONFIG=$(find arch/arm64/configs/ -name "*defconfig" | head -n 1 | sed 's|arch/arm64/configs/||')
-          fi
+          TARGET_DEFCONFIG="vendor/x1q_kor_singlex_defconfig"
 
-          echo "===> DA CHON CHUAN DEFCONFIG CHO S20 ULTRA: $TARGET_DEFCONFIG"
+          echo "===> Dang nap defconfig hop nhat S20 Series: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
@@ -149,10 +145,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: "S20 Ultra Docker Kernel (Official z3q) v1.0.${{ github.run_number }}"
+          name: "S20 Ultra Docker Kernel v1.0.${{ github.run_number }}"
           body: |
-            ### 🚀 Bản phát hành Kernel CHÍNH THỨC S20 Ultra (z3q / SM-G988N)
-            * **Phần cứng:** Chuẩn 100% mã nguồn S20 Ultra z3q từ GoRhanHee (Màn 6.9 inch, Pin 5000mAh, Camera 108MP).
+            ### 🚀 Bản phát hành Kernel S20 Ultra (z3q / SM-G988N)
             * **Tích hợp:** Docker Native & LXC / Droidspaces (cgroups, overlayfs, namespaces).
             * **Bật sẵn:** Quyền Root KernelSU-Next & SuSFS (Manual Hook).
             * **Tương thích:** Bật MODVERSIONS để nạp 100% driver vendor Samsung.
