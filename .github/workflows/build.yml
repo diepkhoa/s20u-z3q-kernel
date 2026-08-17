@@ -93,19 +93,21 @@ jobs:
           # 7. Fix stpcpy
           sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
 
-      - name: Cấu hình Defconfig & Gộp cờ Docker + Tắt Rào Cản Knox
+          # 8. FIX LLD RELOCATION: Chèn trực tiếp -z notext vào Makefile của ARM64
+          sed -i 's/LDFLAGS_vmlinux\s*:=/LDFLAGS_vmlinux := -z notext /g' src/arch/arm64/Makefile 2>/dev/null || true
+          sed -i 's/LDFLAGS_vmlinux\s*+=/LDFLAGS_vmlinux += -z notext /g' src/arch/arm64/Makefile 2>/dev/null || true
+
+      - name: Nạp .config Chuẩn Gốc GoRhanHee & Gộp cờ Docker
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon LDFLAGS_vmlinux=-z,notext"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
-          TARGET_DEFCONFIG="vendor/x1q_kor_singlex_defconfig"
+          # 1. Sử dụng 100% file config gốc vừa trích xuất từ Podman
+          cp $GITHUB_WORKSPACE/config/z3q_base.config .config
 
-          echo "===> Dang nap defconfig hop nhat S20 Series: $TARGET_DEFCONFIG"
-          make $MAKE_ARGS $TARGET_DEFCONFIG
-
-          # Gộp cờ Docker & Tắt sạch 7 rào cản Knox
+          # 2. Gộp các cờ Docker & USB-LAN vào
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
@@ -116,7 +118,7 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon LDFLAGS_vmlinux=-z,notext"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           make $MAKE_ARGS -j$(nproc)
 
@@ -145,13 +147,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: "S20 Ultra Docker Kernel v1.0.${{ github.run_number }}"
+          name: "S20 Ultra Docker Kernel (Verified GoRhanHee Base) v1.0.${{ github.run_number }}"
           body: |
-            ### 🚀 Bản phát hành Kernel S20 Ultra (Tắt sạch 7 rào cản Knox theo GoRhanHee)
-            * **Đã tắt toàn diện:** UH, RKP, KDP, CFP, DEFEX, PROCA, FIVE (Chống Bootloop triệt để).
-            * **Tích hợp:** Docker Native & LXC / Droidspaces (cgroups, overlayfs, namespaces).
-            * **Bật sẵn:** Quyền Root KernelSU-Next & SuSFS (Manual Hook).
-            * **Tương thích:** Bật MODVERSIONS nạp 100% driver vendor Samsung.
+            ### 🚀 Bản phát hành Kernel S20 Ultra (Nền tảng .config gốc chuẩn 100% của GoRhanHee)
+            * **Độ ổn định:** Sử dụng chính xác file .config trích xuất từ bản z3q_SuSFS của GoRhanHee.
+            * **Tích hợp:** Bổ sung Docker Native, Cgroups, Namespaces, OverlayFS.
             * **Driver:** Hỗ trợ mạng dây USB-to-LAN (Realtek RTL8153B / ASIX).
+            * **Cách dùng:** Tải file `boot_docker.tar` nạp vào slot **AP** trong Odin.
           files: |
             output/*
