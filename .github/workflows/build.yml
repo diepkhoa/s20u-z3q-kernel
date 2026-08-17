@@ -54,7 +54,7 @@ jobs:
 
       - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
-          git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
+          git clone --depth=1 https://github.com/GoRhanHee/kernel_samsung_sm8250.git -b x1q src
           
           # 1. Kéo KernelSU-Next và copy ĐẦY ĐỦ
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
