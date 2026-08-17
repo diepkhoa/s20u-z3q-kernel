@@ -57,7 +57,7 @@ jobs:
           # 1. Kéo mã nguồn chính chủ GoRhanHee
           git clone --depth=1 https://github.com/GoRhanHee/kernel_samsung_sm8250.git -b x1q src
           
-          # 2. Kéo KernelSU-Next và copy ĐẦY ĐỦ
+          # 2. Kéo KernelSU-Next
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
           rm -rf src/drivers/kernelsu && mkdir -p src/drivers/kernelsu
           cp -r /tmp/ksu/kernel/* src/drivers/kernelsu/
@@ -67,13 +67,13 @@ jobs:
             cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
           fi
 
-          # 3. Làm sạch Kconfig và patch KSU Hooks + Include Paths
+          # 3. Làm sạch Kconfig và cấu hình include cho KSU (KHÔNG ÉP MANUAL HOOK ĐỂ TRÁNH XUNG ĐỘT LSM)
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
-          sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include -I$(srctree)/drivers/kernelsu/uapi' src/drivers/kernelsu/Kbuild
+          sed -i '1i ccflags-y += -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include -I$(srctree)/drivers/kernelsu/uapi' src/drivers/kernelsu/Kbuild
 
-          # 4. Vá lỗi strscpy_pad trong kernel_compat.h
-          find src/drivers/kernelsu/ -type f -exec sed -i 's/return strscpy_pad(dest, src, count);/strncpy(dest, src, count); return strlen(dest);/g' {} +
+          # 4. Vá lỗi strscpy_pad an toàn bộ nhớ tuyệt đối
+          find src/drivers/kernelsu/ -type f -exec sed -i 's/return strscpy_pad(dest, src, count);/strncpy(dest, src, count); if (count > 0) dest[count - 1] = 0; return strlen(dest);/g' {} +
           find src/drivers/kernelsu/ -type f -exec sed -i 's/\bstrscpy_pad\b/strncpy/g' {} +
 
           # 5. Sửa lỗi DTC yylloc và Typo fdinfo
@@ -94,7 +94,7 @@ jobs:
           # 8. Fix stpcpy
           sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
 
-          # 9. BẢN VÁ CHÍNH THỨC GSI CRC: Xóa __packed để genksyms tính CRC thành công
+          # 9. BẢN VÁ GSI CRC
           find src/drivers/platform/msm/gsi/ -type f -exec sed -i 's/union __packed gsi_channel_scratch/union gsi_channel_scratch/g; s/struct __packed gsi_mhi_channel_scratch/struct gsi_mhi_channel_scratch/g; s/union __packed gsi_evt_scratch/union gsi_evt_scratch/g' {} +
           find src/include/ -type f -exec sed -i 's/union __packed gsi_channel_scratch/union gsi_channel_scratch/g; s/struct __packed gsi_mhi_channel_scratch/struct gsi_mhi_channel_scratch/g; s/union __packed gsi_evt_scratch/union gsi_evt_scratch/g' {} + 2>/dev/null || true
 
@@ -105,10 +105,10 @@ jobs:
           
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
-          # 1. Nạp file config chuẩn đã trích xuất từ Podman
+          # 1. Nạp file config chuẩn trích xuất từ Podman
           cp $GITHUB_WORKSPACE/config/z3q_base.config .config
 
-          # 2. Gộp cờ Docker & USB-LAN vào
+          # 2. Gộp cờ Docker & USB-LAN
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
@@ -148,13 +148,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: "S20 Ultra Docker Kernel (Perfect Build) v1.0.${{ github.run_number }}"
+          name: "S20 Ultra Docker Kernel (Fix Early Panic) v1.0.${{ github.run_number }}"
           body: |
-            ### 🚀 Bản phát hành Kernel S20 Ultra (Chuẩn 100% Nền tảng GoRhanHee + Docker)
-            * **Nền tảng:** Sử dụng 100% file .config gốc đã trích xuất từ bản z3q_SuSFS của GoRhanHee.
-            * **Đã vá lỗi:** Sửa hoàn chỉnh lỗi GSI CRC và stpcpy.
-            * **Tích hợp:** Bổ sung Docker Native, Cgroups, Namespaces, OverlayFS.
-            * **Driver:** Hỗ trợ mạng dây USB-to-LAN (Realtek RTL8153B / ASIX).
-            * **Cách dùng:** Tải file `boot_docker.tar` nạp vào slot **AP** trong Odin.
+            ### Bản phát hành Kernel S20 Ultra (Sửa lỗi sập nhân ở giây đầu tiên)
+            * Khắc phục xung đột LSM Security Hooks và Manual Hooks trong KernelSU.
+            * Khắc phục lỗi đọc ô nhớ hàm strscpy_pad.
+            * Giữ nguyên 100% cấu hình chuẩn GoRhanHee + Docker Native + USB-LAN.
           files: |
             output/*
