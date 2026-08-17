@@ -56,7 +56,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
-          # 1. Kéo KernelSU-Next
+          # 1. Kéo KernelSU-Next và copy ĐẦY ĐỦ
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
           rm -rf src/drivers/kernelsu && mkdir -p src/drivers/kernelsu
           cp -r /tmp/ksu/kernel/* src/drivers/kernelsu/
@@ -98,7 +98,8 @@ jobs:
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          # Bổ sung LDFLAGS_vmlinux="-Wl,-z,notext" để cho phép liên kết MODVERSIONS CRC
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon LDFLAGS_vmlinux=-z,notext"
 
           if [ -f "arch/arm64/configs/vendor/z3q_kor_singlex_defconfig" ]; then
               TARGET_DEFCONFIG="vendor/z3q_kor_singlex_defconfig"
@@ -113,9 +114,6 @@ jobs:
           echo "===> Dang nap defconfig: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
-          # Tắt MODVERSIONS
-          sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/g' .config
-
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
@@ -126,7 +124,7 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon LDFLAGS_vmlinux=-z,notext"
 
           make $MAKE_ARGS -j$(nproc)
 
@@ -157,9 +155,10 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: "S20 Ultra Docker Kernel v1.0.${{ github.run_number }}"
           body: |
-            ### 🚀 Bản phát hành Kernel S20 Ultra (z3q / SM-G988N)
+            ### Kernel S20 Ultra (z3q / SM-G988N)
             * **Tích hợp:** Docker Native & LXC / Droidspaces (cgroups, overlayfs, namespaces).
-            * **Bật sẵn:** Quyền Root KernelSU-Next & công nghệ ẩn root SuSFS.
+            * **Bật sẵn:** Quyền Root KernelSU-Next & SuSFS (Manual Hook).
+            * **Tương thích:** Bật lại MODVERSIONS để nạp 100% driver vendor Samsung.
             * **Driver:** Hỗ trợ mạng dây USB-to-LAN (Realtek RTL8153B / ASIX).
             * **Cách dùng:** Tải file `boot_docker.tar` nạp vào slot **AP** trong Odin.
           files: |
