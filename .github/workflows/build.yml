@@ -54,10 +54,9 @@ jobs:
 
       - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
-          # 1. Kéo nhánh x1q hợp nhất (chuẩn chung cho S20/S20+/S20U Snapdragon)
           git clone --depth=1 https://github.com/xwenx90/GalaxyS20_Series_KernelSU_Next_Susfs.git -b x1q src
           
-          # 2. Kéo KernelSU-Next và copy ĐẦY ĐỦ
+          # 1. Kéo KernelSU-Next và copy ĐẦY ĐỦ
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
           rm -rf src/drivers/kernelsu && mkdir -p src/drivers/kernelsu
           cp -r /tmp/ksu/kernel/* src/drivers/kernelsu/
@@ -67,34 +66,34 @@ jobs:
             cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
           fi
 
-          # 3. Làm sạch Kconfig và patch KSU Hooks + Include Paths
+          # 2. Làm sạch Kconfig và patch KSU Hooks + Include Paths
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
           sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
           sed -i '1i ccflags-y += -DCONFIG_KSU_MANUAL_HOOK -DCONFIG_KSU_SUSFS -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include -I$(srctree)/drivers/kernelsu/uapi' src/drivers/kernelsu/Kbuild
 
-          # 4. Vá lỗi strscpy_pad trong kernel_compat.h
+          # 3. Vá lỗi strscpy_pad trong kernel_compat.h
           find src/drivers/kernelsu/ -type f -exec sed -i 's/return strscpy_pad(dest, src, count);/strncpy(dest, src, count); return strlen(dest);/g' {} +
           find src/drivers/kernelsu/ -type f -exec sed -i 's/\bstrscpy_pad\b/strncpy/g' {} +
 
-          # 5. Sửa lỗi DTC yylloc và Typo fdinfo
+          # 4. Sửa lỗi DTC yylloc và Typo fdinfo
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
           sed -i 's/mask, mark->ignored_mask/mark->mask, mark->ignored_mask/g' src/fs/notify/fdinfo.c
 
-          # 6. Vá lỗi đường dẫn Trace & Camera Header & Input Booster
+          # 5. Vá lỗi đường dẫn Trace & Camera Header & Input Booster
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../drivers/hid|' src/drivers/hid/hid-trace.h 2>/dev/null || true
           sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../techpack/display/pll|' src/techpack/display/pll/pll_trace.h 2>/dev/null || true
           sed -i 's|#include "cam_cci_dev.h"|#include "../cam_cci/cam_cci_dev.h"|g' src/techpack/camera/drivers/cam_sensor_module/cam_sensor_io/cam_sensor_i2c.h 2>/dev/null || true
           sed -i 's/int is_ib_init_succeed()/int is_ib_init_succeed(void)/g' src/drivers/input/input_booster.c 2>/dev/null || true
 
-          # 7. Sửa lỗi Broadcom Wi-Fi
+          # 6. Sửa lỗi Broadcom Wi-Fi
           sed -i '1i #pragma clang diagnostic ignored "-Wframe-address"' src/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_linux.c 2>/dev/null || true
           find src/drivers/net/wireless/broadcom/ -name "Makefile*" -type f -exec sed -i 's/-Werror\b//g' {} +
 
-          # 8. Fix stpcpy
+          # 7. Fix stpcpy
           sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
 
-      - name: Cấu hình Defconfig & Gộp cờ Docker + KernelSU
+      - name: Cấu hình Defconfig & Gộp cờ Docker + Tắt Rào Cản Knox
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
@@ -106,6 +105,7 @@ jobs:
           echo "===> Dang nap defconfig hop nhat S20 Series: $TARGET_DEFCONFIG"
           make $MAKE_ARGS $TARGET_DEFCONFIG
 
+          # Gộp cờ Docker & Tắt sạch 7 rào cản Knox
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
@@ -147,11 +147,11 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: "S20 Ultra Docker Kernel v1.0.${{ github.run_number }}"
           body: |
-            ### 🚀 Bản phát hành Kernel S20 Ultra (z3q / SM-G988N)
+            ### 🚀 Bản phát hành Kernel S20 Ultra (Tắt sạch 7 rào cản Knox theo GoRhanHee)
+            * **Đã tắt toàn diện:** UH, RKP, KDP, CFP, DEFEX, PROCA, FIVE (Chống Bootloop triệt để).
             * **Tích hợp:** Docker Native & LXC / Droidspaces (cgroups, overlayfs, namespaces).
             * **Bật sẵn:** Quyền Root KernelSU-Next & SuSFS (Manual Hook).
-            * **Tương thích:** Bật MODVERSIONS để nạp 100% driver vendor Samsung.
+            * **Tương thích:** Bật MODVERSIONS nạp 100% driver vendor Samsung.
             * **Driver:** Hỗ trợ mạng dây USB-to-LAN (Realtek RTL8153B / ASIX).
-            * **Cách dùng:** Tải file `boot_docker.tar` nạp vào slot **AP** trong Odin.
           files: |
             output/*
