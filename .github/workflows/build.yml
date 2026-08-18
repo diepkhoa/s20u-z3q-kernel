@@ -22,7 +22,7 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
             git curl wget unzip python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
-            dos2unix ccache
+            dos2unix ccache patch
 
       - name: Thiết lập Bộ nhớ đệm (Cache)
         uses: actions/cache@v4
@@ -30,7 +30,7 @@ jobs:
           path: |
             toolchain
             ~/.ccache
-          key: ${{ runner.os }}-kernel-build-cache-gorhanhee-v1
+          key: ${{ runner.os }}-kernel-build-cache-gorhanhee-v2
           restore-keys: |
             ${{ runner.os }}-kernel-build-cache-gorhanhee-
 
@@ -45,7 +45,7 @@ jobs:
           fi
           echo "/tmp/tools" >> $GITHUB_PATH
 
-      # ĐIỀU KIỆN 4: DÙNG ĐÚNG BỘ COMPILER GCC 4.9 + LLVM 10.0 CHÍNH CHỦ CỦA GORHANHEE
+      # DÙNG ĐÚNG BỘ COMPILER GCC 4.9 + LLVM 10.0 CHÍNH CHỦ CỦA GORHANHEE
       - name: Tải Toolchain Chuẩn GoRhanHee (GCC 4.9 + LLVM 10.0)
         run: |
           if [ ! -d "toolchain/bin" ]; then
@@ -57,7 +57,7 @@ jobs:
           # 1. Kéo mã nguồn gốc S20 Series
           git clone --depth=1 https://github.com/GoRhanHee/kernel_samsung_sm8250.git -b x1q src
 
-          # ĐIỀU KIỆN 2: Kéo KernelSU-Next nhánh legacy
+          # 2. Kéo KernelSU-Next nhánh legacy
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
           rm -rf src/drivers/kernelsu && mkdir -p src/drivers/kernelsu
           cp -r /tmp/ksu/kernel/* src/drivers/kernelsu/
@@ -67,22 +67,26 @@ jobs:
             cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
           fi
 
-          # ĐIỀU KIỆN 3: Tải và áp dụng bản vá scope_min_manual_hooks_v1.6.patch
+          # 3. Tải và áp dụng bản vá manual hooks
           cd src
           curl -fsSL https://raw.githubusercontent.com/WildKernels/kernel_patches/main/next/scope_min_manual_hooks_v1.6.patch -o /tmp/manual_hooks.patch
           patch -p1 -N < /tmp/manual_hooks.patch || echo "Manual hooks da duoc tich hop san"
           cd ..
 
-          # Làm sạch Kconfig
+          # 4. Làm sạch Kconfig
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
 
-      # ĐIỀU KIỆN 1: Nạp cấu hình z3q_base.config (Đã tắt sạch uh, rkp, kdp, cfp, defex, proca, five...)
+          # 5. Sửa lỗi DTC yylloc
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
+
       - name: Nạp .config Chuẩn GoRhanHee & Gộp cờ Docker
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-"
+          # Bổ sung đầy đủ AS và HOSTCFLAGS
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- AS=aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           # 1. Nạp file config chuẩn đã trích xuất từ Podman
           cp $GITHUB_WORKSPACE/config/z3q_base.config .config
@@ -98,7 +102,7 @@ jobs:
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- AS=aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           make $MAKE_ARGS -j$(nproc)
 
