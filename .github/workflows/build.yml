@@ -22,7 +22,7 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
             git curl wget unzip python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu dos2unix ccache
+            dos2unix ccache
 
       - name: Thiết lập Bộ nhớ đệm (Cache)
         uses: actions/cache@v4
@@ -30,9 +30,9 @@ jobs:
           path: |
             toolchain
             ~/.ccache
-          key: ${{ runner.os }}-kernel-build-cache-v1
+          key: ${{ runner.os }}-kernel-build-cache-gorhanhee-v1
           restore-keys: |
-            ${{ runner.os }}-kernel-build-cache-
+            ${{ runner.os }}-kernel-build-cache-gorhanhee-
 
       - name: Tải công cụ Magiskboot
         run: |
@@ -45,19 +45,19 @@ jobs:
           fi
           echo "/tmp/tools" >> $GITHUB_PATH
 
-      - name: Tải Toolchain Proton-Clang
+      # ĐIỀU KIỆN 4: DÙNG ĐÚNG BỘ COMPILER GCC 4.9 + LLVM 10.0 CHÍNH CHỦ CỦA GORHANHEE
+      - name: Tải Toolchain Chuẩn GoRhanHee (GCC 4.9 + LLVM 10.0)
         run: |
           if [ ! -d "toolchain/bin" ]; then
-            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
-            rm -f toolchain/bin/as toolchain/bin/ld
+            git clone --depth=1 https://github.com/GoRhanHee/aarch64-android-4.9_llvm-10.0.git toolchain
           fi
 
-      - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
+      - name: Tải mã nguồn Kernel & Áp dụng chuẩn 4 điều kiện GoRhanHee
         run: |
-          # 1. Kéo mã nguồn chính chủ GoRhanHee
+          # 1. Kéo mã nguồn gốc S20 Series
           git clone --depth=1 https://github.com/GoRhanHee/kernel_samsung_sm8250.git -b x1q src
-          
-          # 2. Kéo KernelSU-Next
+
+          # ĐIỀU KIỆN 2: Kéo KernelSU-Next nhánh legacy
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b legacy /tmp/ksu
           rm -rf src/drivers/kernelsu && mkdir -p src/drivers/kernelsu
           cp -r /tmp/ksu/kernel/* src/drivers/kernelsu/
@@ -67,59 +67,38 @@ jobs:
             cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
           fi
 
-          # 3. Làm sạch Kconfig và cấu hình include cho KSU (KHÔNG ÉP MANUAL HOOK ĐỂ TRÁNH XUNG ĐỘT LSM)
+          # ĐIỀU KIỆN 3: Tải và áp dụng bản vá scope_min_manual_hooks_v1.6.patch
+          cd src
+          curl -fsSL https://raw.githubusercontent.com/WildKernels/kernel_patches/main/next/scope_min_manual_hooks_v1.6.patch -o /tmp/manual_hooks.patch
+          patch -p1 -N < /tmp/manual_hooks.patch || echo "Manual hooks da duoc tich hop san"
+          cd ..
+
+          # Làm sạch Kconfig
           find src/ -name "Kconfig*" -type f -exec sed -i 's/\xc2\xa0/ /g; s/\r$//; s/^\xef\xbb\xbf//' {} +
-          sed -i '/No hooks were defined/d' src/drivers/kernelsu/Kbuild
-          sed -i '1i ccflags-y += -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include -I$(srctree)/drivers/kernelsu/uapi' src/drivers/kernelsu/Kbuild
 
-          # 4. Vá lỗi strscpy_pad an toàn bộ nhớ tuyệt đối
-          find src/drivers/kernelsu/ -type f -exec sed -i 's/return strscpy_pad(dest, src, count);/strncpy(dest, src, count); if (count > 0) dest[count - 1] = 0; return strlen(dest);/g' {} +
-          find src/drivers/kernelsu/ -type f -exec sed -i 's/\bstrscpy_pad\b/strncpy/g' {} +
-
-          # 5. Sửa lỗi DTC yylloc và Typo fdinfo
-          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.l 2>/dev/null || true
-          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' src/scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
-          sed -i 's/mask, mark->ignored_mask/mark->mask, mark->ignored_mask/g' src/fs/notify/fdinfo.c
-
-          # 6. Vá lỗi đường dẫn Trace & Camera Header & Input Booster
-          sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../drivers/hid|' src/drivers/hid/hid-trace.h 2>/dev/null || true
-          sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../techpack/display/pll|' src/techpack/display/pll/pll_trace.h 2>/dev/null || true
-          sed -i 's|#include "cam_cci_dev.h"|#include "../cam_cci/cam_cci_dev.h"|g' src/techpack/camera/drivers/cam_sensor_module/cam_sensor_io/cam_sensor_i2c.h 2>/dev/null || true
-          sed -i 's/int is_ib_init_succeed()/int is_ib_init_succeed(void)/g' src/drivers/input/input_booster.c 2>/dev/null || true
-
-          # 7. Sửa lỗi Broadcom Wi-Fi
-          sed -i '1i #pragma clang diagnostic ignored "-Wframe-address"' src/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_linux.c 2>/dev/null || true
-          find src/drivers/net/wireless/broadcom/ -name "Makefile*" -type f -exec sed -i 's/-Werror\b//g' {} +
-
-          # 8. Fix stpcpy
-          sed -i 's/KBUILD_CFLAGS   :=/KBUILD_CFLAGS   := -fno-builtin-stpcpy -fno-builtin /g' src/Makefile
-
-          # 9. BẢN VÁ GSI CRC
-          find src/drivers/platform/msm/gsi/ -type f -exec sed -i 's/union __packed gsi_channel_scratch/union gsi_channel_scratch/g; s/struct __packed gsi_mhi_channel_scratch/struct gsi_mhi_channel_scratch/g; s/union __packed gsi_evt_scratch/union gsi_evt_scratch/g' {} +
-          find src/include/ -type f -exec sed -i 's/union __packed gsi_channel_scratch/union gsi_channel_scratch/g; s/struct __packed gsi_mhi_channel_scratch/struct gsi_mhi_channel_scratch/g; s/union __packed gsi_evt_scratch/union gsi_evt_scratch/g' {} + 2>/dev/null || true
-
-      - name: Nạp .config Chuẩn Gốc GoRhanHee & Gộp cờ Docker
+      # ĐIỀU KIỆN 1: Nạp cấu hình z3q_base.config (Đã tắt sạch uh, rkp, kdp, cfp, defex, proca, five...)
+      - name: Nạp .config Chuẩn GoRhanHee & Gộp cờ Docker
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-"
 
-          # 1. Nạp file config chuẩn trích xuất từ Podman
+          # 1. Nạp file config chuẩn đã trích xuất từ Podman
           cp $GITHUB_WORKSPACE/config/z3q_base.config .config
 
           # 2. Gộp cờ Docker & USB-LAN
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
-      - name: Bắt đầu Biên dịch Kernel
+      - name: Bắt đầu Biên dịch Kernel Chuẩn Gốc
         run: |
           cd src
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-"
 
           make $MAKE_ARGS -j$(nproc)
 
@@ -148,11 +127,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: "S20 Ultra Docker Kernel (Fix Early Panic) v1.0.${{ github.run_number }}"
+          name: "S20 Ultra Docker Kernel (Official GoRhanHee Spec) v1.0.${{ github.run_number }}"
           body: |
-            ### Bản phát hành Kernel S20 Ultra (Sửa lỗi sập nhân ở giây đầu tiên)
-            * Khắc phục xung đột LSM Security Hooks và Manual Hooks trong KernelSU.
-            * Khắc phục lỗi đọc ô nhớ hàm strscpy_pad.
-            * Giữ nguyên 100% cấu hình chuẩn GoRhanHee + Docker Native + USB-LAN.
+            ### Bản phát hành Kernel S20 Ultra (Chuẩn 100% 4 điều kiện GoRhanHee)
+            * Trình biên dịch: Sử dụng chính thức LLVM 10.0 + GCC 4.9 của GoRhanHee.
+            * Bản vá: Áp dụng chuẩn scope_min_manual_hooks_v1.6.patch.
+            * Bảo mật: Tắt hoàn toàn 7 rào cản Knox (UH, RKP, KDP, CFP, DEFEX, PROCA, FIVE).
+            * Tính năng: Bật đầy đủ Docker Native, Cgroups, Namespaces, USB-LAN RTL8153B.
           files: |
             output/*
