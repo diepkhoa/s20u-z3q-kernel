@@ -17,12 +17,17 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Cài đặt công cụ biên dịch
+      - name: Cài đặt công cụ biên dịch & Khắc phục libtinfo.so.5
         run: |
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
             git curl wget unzip python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
-            dos2unix patch
+            dos2unix patch libncurses5 libtinfo5 || true
+
+          # Tạo symlink bắt buộc cho libtinfo.so.5 và libncurses.so.5 trên Ubuntu 22.04
+          sudo ln -sf /lib/x86_64-linux-gnu/libtinfo.so.6 /lib/x86_64-linux-gnu/libtinfo.so.5 2>/dev/null || true
+          sudo ln -sf /lib/x86_64-linux-gnu/libncurses.so.6 /lib/x86_64-linux-gnu/libncurses.so.5 2>/dev/null || true
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 2>/dev/null || true
 
       - name: Tải công cụ Magiskboot
         run: |
@@ -35,11 +40,15 @@ jobs:
           fi
           echo "/tmp/tools" >> $GITHUB_PATH
 
-      # TẢI TRỰC TIẾP TOOLCHAIN GORHANHEE (AARCH64 GCC 4.9 + LLVM 10.0)
-      - name: Tải Toolchain Chính Chủ GoRhanHee
+      # TẢI TOOLCHAIN CHÍNH CHỦ GORHANHEE VÀ DỌN DẸP XUNG ĐỘT HOST AS
+      - name: Tải Toolchain Chuẩn GoRhanHee
         run: |
           rm -rf toolchain
           git clone --depth=1 https://github.com/GoRhanHee/aarch64-android-4.9_llvm-10.0.git toolchain
+          
+          # Xóa các file as/ld không có tiền tố để không đè lên công cụ x86 của Ubuntu
+          find toolchain/ -name "as" ! -name "*aarch64*" ! -name "*arm*" -delete 2>/dev/null || true
+          find toolchain/ -name "ld" ! -name "*aarch64*" ! -name "*arm*" -delete 2>/dev/null || true
 
       - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
@@ -72,7 +81,6 @@ jobs:
 
       - name: Nạp .config Chuẩn GoRhanHee & Gộp cờ Docker
         run: |
-          # Quét và nạp tất cả các thư mục bin của Toolchain vào PATH
           for bin_path in $(find $GITHUB_WORKSPACE/toolchain -type d -name "bin"); do
               export PATH=$bin_path:$PATH
           done
@@ -80,7 +88,7 @@ jobs:
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           cd src
-          # 1. Nạp file config chuẩn đã trích xuất từ Podman
+          # 1. Nạp file config chuẩn trích xuất từ Podman
           cp $GITHUB_WORKSPACE/config/z3q_base.config .config
 
           # 2. Gộp cờ Docker & USB-LAN
@@ -125,10 +133,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: "S20 Ultra Docker Kernel (Official GoRhanHee LLVM 10) v1.0.${{ github.run_number }}"
+          name: "S20 Ultra Docker Kernel (Official GoRhanHee Spec) v1.0.${{ github.run_number }}"
           body: |
             ### Bản phát hành Kernel S20 Ultra (Biên dịch chính thức bằng Toolchain GoRhanHee)
-            * Trình biên dịch: Sử dụng 100% LLVM 10.0 + GCC 4.9 chính chủ từ GoRhanHee.
+            * Trình biên dịch: Sử dụng chính thức LLVM 10.0 + GCC 4.9 chính chủ từ GoRhanHee.
             * Nền tảng: Sử dụng 100% file .config gốc đã trích xuất từ bản z3q_SuSFS của GoRhanHee.
             * Tích hợp: Bổ sung Docker Native, Cgroups, Namespaces, OverlayFS, USB-LAN RTL8153B.
             * Quyền Root: KernelSU-Next và SuSFS tích hợp sẵn.
