@@ -30,7 +30,7 @@ jobs:
           path: |
             toolchain
             ~/.ccache
-          key: ${{ runner.os }}-kernel-build-cache-gorhanhee-v2
+          key: ${{ runner.os }}-kernel-build-cache-gorhanhee-v3
           restore-keys: |
             ${{ runner.os }}-kernel-build-cache-gorhanhee-
 
@@ -45,7 +45,7 @@ jobs:
           fi
           echo "/tmp/tools" >> $GITHUB_PATH
 
-      # DÙNG ĐÚNG BỘ COMPILER GCC 4.9 + LLVM 10.0 CHÍNH CHỦ CỦA GORHANHEE
+      # TẢI ĐÚNG TOOLCHAIN GORHANHEE
       - name: Tải Toolchain Chuẩn GoRhanHee (GCC 4.9 + LLVM 10.0)
         run: |
           if [ ! -d "toolchain/bin" ]; then
@@ -82,13 +82,17 @@ jobs:
 
       - name: Nạp .config Chuẩn GoRhanHee & Gộp cờ Docker
         run: |
-          cd src
-          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
-          
-          # Bổ sung đầy đủ AS và HOSTCFLAGS
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- AS=aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          # Tự động dò tìm đường dẫn thực tế của các thư mục bin trong Toolchain
+          GCC64_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-as" | head -n 1))
+          GCC32_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-as" | head -n 1))
+          CLANG_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "clang" | head -n 1))
 
-          # 1. Nạp file config chuẩn đã trích xuất từ Podman
+          export PATH=$CLANG_DIR:$GCC64_DIR:$GCC32_DIR:$PATH
+          
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_DIR}/aarch64-linux-android- CROSS_COMPILE_ARM32=${GCC32_DIR}/arm-linux-androideabi- AS=${GCC64_DIR}/aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+
+          cd src
+          # 1. Nạp file config chuẩn trích xuất từ Podman
           cp $GITHUB_WORKSPACE/config/z3q_base.config .config
 
           # 2. Gộp cờ Docker & USB-LAN
@@ -97,13 +101,17 @@ jobs:
 
       - name: Bắt đầu Biên dịch Kernel Chuẩn Gốc
         run: |
-          cd src
-          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          GCC64_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-as" | head -n 1))
+          GCC32_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-as" | head -n 1))
+          CLANG_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "clang" | head -n 1))
+
+          export PATH=$CLANG_DIR:$GCC64_DIR:$GCC32_DIR:$PATH
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- AS=aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_DIR}/aarch64-linux-android- CROSS_COMPILE_ARM32=${GCC32_DIR}/arm-linux-androideabi- AS=${GCC64_DIR}/aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
+          cd src
           make $MAKE_ARGS -j$(nproc)
 
       - name: Tự động tráo ruột và đóng gói file boot_docker.tar cho Odin
@@ -134,7 +142,7 @@ jobs:
           name: "S20 Ultra Docker Kernel (Official GoRhanHee Spec) v1.0.${{ github.run_number }}"
           body: |
             ### Bản phát hành Kernel S20 Ultra (Chuẩn 100% 4 điều kiện GoRhanHee)
-            * Trình biên dịch: Sử dụng chính thức LLVM 10.0 + GCC 4.9 của GoRhanHee.
+            * Trình biên dịch: Sử dụng chính thức LLVM 10.0 + GCC 4.9 với đường dẫn tuyệt đối.
             * Bản vá: Áp dụng chuẩn scope_min_manual_hooks_v1.6.patch.
             * Bảo mật: Tắt hoàn toàn 7 rào cản Knox (UH, RKP, KDP, CFP, DEFEX, PROCA, FIVE).
             * Tính năng: Bật đầy đủ Docker Native, Cgroups, Namespaces, USB-LAN RTL8153B.
