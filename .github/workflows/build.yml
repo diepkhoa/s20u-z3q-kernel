@@ -43,10 +43,6 @@ jobs:
         run: |
           rm -rf toolchain
           git clone --depth=1 https://github.com/GoRhanHee/aarch64-android-4.9_llvm-10.0.git toolchain
-          
-          # Xóa các file as/ld không có tiền tố để tránh đè lên công cụ của Ubuntu
-          find toolchain/ -name "as" ! -name "*aarch64*" ! -name "*arm*" -delete 2>/dev/null || true
-          find toolchain/ -name "ld" ! -name "*aarch64*" ! -name "*arm*" -delete 2>/dev/null || true
 
       - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
@@ -76,14 +72,27 @@ jobs:
 
       - name: Nạp .config Chuẩn GoRhanHee & Gộp cờ Docker
         run: |
-          GCC64_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-ld" | head -n 1))
-          GCC32_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-ld" | head -n 1))
-          CLANG_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "clang" | head -n 1))
+          # 1. Nạp toàn bộ thư mục bin vào PATH
+          for bin_path in $(find $GITHUB_WORKSPACE/toolchain -type d -name "bin"); do
+              export PATH=$bin_path:$PATH
+          done
 
-          export PATH=$CLANG_DIR:$GCC64_DIR:$GCC32_DIR:$PATH
-          
-          # Gán đường dẫn tuyệt đối vào CROSS_COMPILE để Clang gọi đúng aarch64-linux-android-ld
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_DIR}/aarch64-linux-android- CROSS_COMPILE_ARM32=${GCC32_DIR}/arm-linux-androideabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          # 2. Xác định tiền tố CROSS_COMPILE một cách an toàn
+          AARCH64_LD=$(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-ld" | head -n 1)
+          if [ -n "$AARCH64_LD" ]; then
+              GCC64_PREFIX=$(echo "$AARCH64_LD" | sed 's/ld$//')
+          else
+              GCC64_PREFIX="aarch64-linux-android-"
+          fi
+
+          ARM32_LD=$(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-ld" | head -n 1)
+          if [ -n "$ARM32_LD" ]; then
+              GCC32_PREFIX=$(echo "$ARM32_LD" | sed 's/ld$//')
+          else
+              GCC32_PREFIX="arm-linux-androideabi-"
+          fi
+
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_PREFIX} CROSS_COMPILE_ARM32=${GCC32_PREFIX} HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           cd src
           cp $GITHUB_WORKSPACE/config/z3q_base.config .config
@@ -92,15 +101,28 @@ jobs:
 
       - name: Bắt đầu Biên dịch Kernel Chuẩn GoRhanHee
         run: |
-          GCC64_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-ld" | head -n 1))
-          GCC32_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-ld" | head -n 1))
-          CLANG_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "clang" | head -n 1))
+          for bin_path in $(find $GITHUB_WORKSPACE/toolchain -type d -name "bin"); do
+              export PATH=$bin_path:$PATH
+          done
 
-          export PATH=$CLANG_DIR:$GCC64_DIR:$GCC32_DIR:$PATH
+          AARCH64_LD=$(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-ld" | head -n 1)
+          if [ -n "$AARCH64_LD" ]; then
+              GCC64_PREFIX=$(echo "$AARCH64_LD" | sed 's/ld$//')
+          else
+              GCC64_PREFIX="aarch64-linux-android-"
+          fi
+
+          ARM32_LD=$(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-ld" | head -n 1)
+          if [ -n "$ARM32_LD" ]; then
+              GCC32_PREFIX=$(echo "$ARM32_LD" | sed 's/ld$//')
+          else
+              GCC32_PREFIX="arm-linux-androideabi-"
+          fi
+
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_DIR}/aarch64-linux-android- CROSS_COMPILE_ARM32=${GCC32_DIR}/arm-linux-androideabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_PREFIX} CROSS_COMPILE_ARM32=${GCC32_PREFIX} HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           cd src
           make $MAKE_ARGS -j$(nproc)
