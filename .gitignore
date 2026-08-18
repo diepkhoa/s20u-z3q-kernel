@@ -1,7 +1,42 @@
-*.o
-*.tar
-*.zip
-Image
-out/
-src/
+# 1. Cac thu muc ma nguon va cong cu cuc bo (Rat nang, khong commit)
 toolchain/
+src/
+output/
+tmp/
+
+# 2. File tam sinh ra trong qua trinh bien dich
+*.o
+*.o.cmd
+*.cmd
+*.ko
+*.mod.c
+*.order
+*.builtin
+*.dtb
+*.dtbo
+*.a
+*.so
+*.so.dbg
+vmlinux
+System.map
+
+# 3. File nen va file tam thoi
+*.tar
+*.tar.gz
+*.zip
+*.lz4
+*.tmp
+*.bak
+*~
+
+# 4. Giu lai cac file va thu muc quan trong (Ngoai le)
+!config/
+!config/*
+!scripts/
+!scripts/*
+!stock/
+!stock/boot.img
+!build_local.sh
+!.gitignore
+!.github/
+!.github/workflows/*
