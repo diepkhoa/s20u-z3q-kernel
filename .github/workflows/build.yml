@@ -22,17 +22,7 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
             git curl wget unzip python3 python-is-python3 libncurses5-dev cpio tar lz4 libncurses-dev \
-            dos2unix ccache patch
-
-      - name: Thiết lập Bộ nhớ đệm (Cache)
-        uses: actions/cache@v4
-        with:
-          path: |
-            toolchain
-            ~/.ccache
-          key: ${{ runner.os }}-kernel-build-cache-gorhanhee-v3
-          restore-keys: |
-            ${{ runner.os }}-kernel-build-cache-gorhanhee-
+            dos2unix patch
 
       - name: Tải công cụ Magiskboot
         run: |
@@ -45,16 +35,16 @@ jobs:
           fi
           echo "/tmp/tools" >> $GITHUB_PATH
 
-      # TẢI ĐÚNG TOOLCHAIN GORHANHEE
-      - name: Tải Toolchain Chuẩn GoRhanHee (GCC 4.9 + LLVM 10.0)
+      # TẢI TRỰC TIẾP TOOLCHAIN GORHANHEE (AARCH64 GCC 4.9 + LLVM 10.0)
+      - name: Tải Toolchain Chính Chủ GoRhanHee
         run: |
-          if [ ! -d "toolchain/bin" ]; then
-            git clone --depth=1 https://github.com/GoRhanHee/aarch64-android-4.9_llvm-10.0.git toolchain
-          fi
+          rm -rf toolchain
+          git clone --depth=1 https://github.com/GoRhanHee/aarch64-android-4.9_llvm-10.0.git toolchain
 
-      - name: Tải mã nguồn Kernel & Áp dụng chuẩn 4 điều kiện GoRhanHee
+      - name: Tải mã nguồn Kernel S20 Series & Patch Toàn Diện
         run: |
-          # 1. Kéo mã nguồn gốc S20 Series
+          # 1. Kéo mã nguồn gốc S20 Series từ GoRhanHee
+          rm -rf src
           git clone --depth=1 https://github.com/GoRhanHee/kernel_samsung_sm8250.git -b x1q src
 
           # 2. Kéo KernelSU-Next nhánh legacy
@@ -67,7 +57,7 @@ jobs:
             cp -r /tmp/ksu/include/uapi src/drivers/kernelsu/
           fi
 
-          # 3. Tải và áp dụng bản vá manual hooks
+          # 3. Áp dụng bản vá manual hooks
           cd src
           curl -fsSL https://raw.githubusercontent.com/WildKernels/kernel_patches/main/next/scope_min_manual_hooks_v1.6.patch -o /tmp/manual_hooks.patch
           patch -p1 -N < /tmp/manual_hooks.patch || echo "Manual hooks da duoc tich hop san"
@@ -82,34 +72,30 @@ jobs:
 
       - name: Nạp .config Chuẩn GoRhanHee & Gộp cờ Docker
         run: |
-          # Tự động dò tìm đường dẫn thực tế của các thư mục bin trong Toolchain
-          GCC64_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-as" | head -n 1))
-          GCC32_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-as" | head -n 1))
-          CLANG_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "clang" | head -n 1))
-
-          export PATH=$CLANG_DIR:$GCC64_DIR:$GCC32_DIR:$PATH
+          # Quét và nạp tất cả các thư mục bin của Toolchain vào PATH
+          for bin_path in $(find $GITHUB_WORKSPACE/toolchain -type d -name "bin"); do
+              export PATH=$bin_path:$PATH
+          done
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_DIR}/aarch64-linux-android- CROSS_COMPILE_ARM32=${GCC32_DIR}/arm-linux-androideabi- AS=${GCC64_DIR}/aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           cd src
-          # 1. Nạp file config chuẩn trích xuất từ Podman
+          # 1. Nạp file config chuẩn đã trích xuất từ Podman
           cp $GITHUB_WORKSPACE/config/z3q_base.config .config
 
           # 2. Gộp cờ Docker & USB-LAN
           scripts/kconfig/merge_config.sh -m .config $GITHUB_WORKSPACE/config/docker.config
           make $MAKE_ARGS olddefconfig
 
-      - name: Bắt đầu Biên dịch Kernel Chuẩn Gốc
+      - name: Bắt đầu Biên dịch Kernel Chuẩn GoRhanHee
         run: |
-          GCC64_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-android-as" | head -n 1))
-          GCC32_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "arm-linux-androideabi-as" | head -n 1))
-          CLANG_DIR=$(dirname $(find $GITHUB_WORKSPACE/toolchain -name "clang" | head -n 1))
-
-          export PATH=$CLANG_DIR:$GCC64_DIR:$GCC32_DIR:$PATH
+          for bin_path in $(find $GITHUB_WORKSPACE/toolchain -type d -name "bin"); do
+              export PATH=$bin_path:$PATH
+          done
           export KSU_GIT_VERSION="12450"
           export KSU_VERSION_TAG="v1.0.5"
           
-          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${GCC64_DIR}/aarch64-linux-android- CROSS_COMPILE_ARM32=${GCC32_DIR}/arm-linux-androideabi- AS=${GCC64_DIR}/aarch64-linux-android-as HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon"
 
           cd src
           make $MAKE_ARGS -j$(nproc)
@@ -139,12 +125,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: "S20 Ultra Docker Kernel (Official GoRhanHee Spec) v1.0.${{ github.run_number }}"
+          name: "S20 Ultra Docker Kernel (Official GoRhanHee LLVM 10) v1.0.${{ github.run_number }}"
           body: |
-            ### Bản phát hành Kernel S20 Ultra (Chuẩn 100% 4 điều kiện GoRhanHee)
-            * Trình biên dịch: Sử dụng chính thức LLVM 10.0 + GCC 4.9 với đường dẫn tuyệt đối.
-            * Bản vá: Áp dụng chuẩn scope_min_manual_hooks_v1.6.patch.
-            * Bảo mật: Tắt hoàn toàn 7 rào cản Knox (UH, RKP, KDP, CFP, DEFEX, PROCA, FIVE).
-            * Tính năng: Bật đầy đủ Docker Native, Cgroups, Namespaces, USB-LAN RTL8153B.
+            ### Bản phát hành Kernel S20 Ultra (Biên dịch chính thức bằng Toolchain GoRhanHee)
+            * Trình biên dịch: Sử dụng 100% LLVM 10.0 + GCC 4.9 chính chủ từ GoRhanHee.
+            * Nền tảng: Sử dụng 100% file .config gốc đã trích xuất từ bản z3q_SuSFS của GoRhanHee.
+            * Tích hợp: Bổ sung Docker Native, Cgroups, Namespaces, OverlayFS, USB-LAN RTL8153B.
+            * Quyền Root: KernelSU-Next và SuSFS tích hợp sẵn.
           files: |
             output/*
